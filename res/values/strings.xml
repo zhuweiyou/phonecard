@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用名（桌面图标/应用列表里显示） -->
+    <string name="app_name">手机桌面卡片</string>
+    <!-- 卡片名（在“插件/小组件”列表里显示），一张卡片一个 -->
+    <string name="card_white_clock">手机桌面卡片-白色时钟</string>
+</resources>

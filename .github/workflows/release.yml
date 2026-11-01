@@ -1,0 +1,145 @@
+name: Release APK
+
+# 只手动触发（Actions 页面点 “Run workflow” 填表），和 decktrace / tinyjpg 一致：
+#   手动填版本号 -> 校验 -> 构建 release APK -> 验签 -> 打 tag -> 发布 GitHub Release。
+# 不挂 push: tags 触发：本 workflow 自己会 push 一个 v* tag，若再挂 push 触发就会
+# 二次触发、重复发版。main 分支只放代码，push 不构建。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，格式 vX.Y.Z（例：v1.0.0）"
+        required: true
+        type: string
+      description:
+        description: "Release 说明（作为 GitHub Release 正文）"
+        required: true
+        type: string
+
+permissions:
+  contents: write # 打 tag / 建 Release 需要写权限
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # 发版构建被打断比排队更糟
+
+jobs:
+  apk:
+    # 固定 24.04，避免 ubuntu-latest 迁移到 Ubuntu 26 时环境漂移（runner 自带 Android SDK）。
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # 打 tag / 检查已有 tag 需要完整历史与 tag
+
+      # build.sh 用 -source 11 -target 11，JDK 17 可编；显式钉住避免 runner 默认版本漂移。
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 本项目不依赖 Gradle，直接用 aapt2/javac/d8/zipalign/apksigner。
+      # runner 自带 Android SDK（ANDROID_HOME 已设），用 sdkmanager 装指定组件即可。
+      - name: 安装 Android SDK 组件
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          [ -n "$SDK" ] || { echo "::error::runner 没有 ANDROID_HOME，镜像变了？"; exit 1; }
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          fi
+          [ -n "$SDKMGR" ] || { echo "::error::找不到 sdkmanager"; exit 1; }
+          # yes | ... 被 SIGPIPE 收尾，pipefail 下管道会 141 结束，必须显式兜住
+          ( yes | "$SDKMGR" --sdk_root="$SDK" --licenses > /dev/null ) || true
+          "$SDKMGR" --sdk_root="$SDK" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+
+      # 签名密钥不再入库，统一从仓库 Secrets 注入（runner 用完即弃，不落任何提交/artifact）。
+      # 未配置时直接报错，避免静默产出装不上的 unsigned 包。
+      - name: 准备签名密钥（来自 Secrets）
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::缺少 secret KEYSTORE_BASE64，请在仓库 Settings → Secrets and variables → Actions 配置"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_PASS=${KEYSTORE_PASSWORD:-android}"
+            echo "KEY_ALIAS=${KEY_ALIAS:-androiddebugkey}"
+            echo "KEY_PASS=${KEY_PASSWORD:-android}"
+          } >> "$GITHUB_ENV"
+
+      - name: 校验版本号并构建 release APK
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RAW_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version 必须形如 vX.Y.Z（例 v1.0.0），收到：$RAW_VERSION"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$RAW_VERSION" >/dev/null; then
+            echo "::error::tag $RAW_VERSION 已存在，请换一个版本号"
+            exit 1
+          fi
+          TAG="$RAW_VERSION"
+          VER="${RAW_VERSION#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VER"
+          for part in "$MAJOR" "$MINOR" "$PATCH"; do
+            case "$part" in
+              ''|*[!0-9]*) echo "::error::版本段不是数字：$VER"; exit 1 ;;
+            esac
+            if [ "$part" -ge 100 ]; then
+              echo "::error::版本段必须小于 100，否则串段撞号：$VER"; exit 1
+            fi
+          done
+          # versionCode = major*10000 + minor*100 + patch（v1.0.0 → 10000）
+          VCODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          {
+            echo "TAG=$TAG"
+            echo "VERSION_NAME=$VER"
+            echo "VERSION_CODE=$VCODE"
+            echo "OUTPUT_APK=phonecard-${TAG}.apk"
+          } >> "$GITHUB_ENV"
+          echo "构建 $TAG（versionCode=$VCODE）"
+          VERSION_NAME="$VER" VERSION_CODE="$VCODE" OUTPUT_APK="phonecard-${TAG}.apk" ./build.sh
+
+      # 签名来自 Secrets，这里必须验：否则可能静默发出一个装不上的包。
+      - name: 校验签名
+        run: |
+          set -euo pipefail
+          APK="$OUTPUT_APK"
+          if [ ! -f "$APK" ]; then
+            echo "::error::没有生成 $APK，实际产物："; ls -l *.apk || true; exit 1
+          fi
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs "$APK"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: phonecard-apk
+          path: phonecard-*.apk
+          if-no-files-found: error
+
+      # 构建与验签都通过后才打 tag（构建失败不留半截 tag），再建 Release 并挂上 APK。
+      - name: 打 tag 并发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.description }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" --notes "$NOTES" "$OUTPUT_APK"
+          echo "已发布：$TAG -> $OUTPUT_APK"

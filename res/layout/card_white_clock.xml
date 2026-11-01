@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@android:color/transparent">
+
+    <TextView
+        android:id="@+id/date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="11月1日  周日"
+        android:textSize="17sp"
+        android:textColor="#FFFFFF"
+        android:fontFamily="sans-serif-medium"
+        android:textStyle="bold"
+        android:letterSpacing="0.05"
+        android:maxLines="1"
+        android:includeFontPadding="false"
+        android:shadowColor="#40000000"
+        android:shadowRadius="8"
+        android:shadowDx="0"
+        android:shadowDy="1" />
+
+    <!-- TextClock 由系统/桌面进程自己走时，不需要我们每分钟改文本，天然准点、不闪 -->
+    <TextClock
+        android:id="@+id/time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
+        android:textSize="80sp"
+        android:textColor="#FFFFFF"
+        android:fontFamily="sans-serif"
+        android:textStyle="bold"
+        android:letterSpacing="-0.02"
+        android:includeFontPadding="false"
+        android:shadowColor="#33000000"
+        android:shadowRadius="10"
+        android:shadowDx="0"
+        android:shadowDy="2" />
+</LinearLayout>

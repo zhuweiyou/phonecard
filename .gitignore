@@ -1,0 +1,14 @@
+# 构建产物（由 build.sh / CI 生成，不入库；发布走 GitHub Release）
+build/
+*.apk
+*.idsig
+
+# 签名密钥不入库：本地保留一份供 ./build.sh 使用，CI 从 Secrets 注入
+keystore.jks
+release.jks
+
+# 本地签名密码等（如果以后通过 local.properties 注入）
+local.properties
+
+# 系统垃圾
+.DS_Store

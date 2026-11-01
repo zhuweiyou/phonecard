@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标：两张叠放的卡片（不再是时钟） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 深色圆角底 -->
+    <path
+        android:fillColor="#1B1F26"
+        android:pathData="M20,4h68a16,16 0 0 1 16,16v68a16,16 0 0 1 -16,16h-68a16,16 0 0 1 -16,-16v-68a16,16 0 0 1 16,-16z" />
+
+    <!-- 后面那张卡（略微旋转，灰色） -->
+    <group
+        android:rotation="-10"
+        android:pivotX="46"
+        android:pivotY="60">
+        <path
+            android:fillColor="#55606E"
+            android:pathData="M26,38h36a9,9 0 0 1 9,9v26a9,9 0 0 1 -9,9h-36a9,9 0 0 1 -9,-9v-26a9,9 0 0 1 9,-9z" />
+    </group>
+
+    <!-- 前面那张卡（白） -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,26h40a10,10 0 0 1 10,10v34a10,10 0 0 1 -10,10h-40a10,10 0 0 1 -10,-10v-34a10,10 0 0 1 10,-10z" />
+
+    <!-- 卡片上的文字示意 -->
+    <path
+        android:fillColor="#2B3440"
+        android:pathData="M40,40h26a3.5,3.5 0 0 1 0,7h-26a3.5,3.5 0 0 1 0,-7z" />
+    <path
+        android:fillColor="#2B3440"
+        android:pathData="M40,54h38a3.5,3.5 0 0 1 0,7h-38a3.5,3.5 0 0 1 0,-7z" />
+    <path
+        android:fillColor="#AEB8C4"
+        android:pathData="M40,68h20a3.5,3.5 0 0 1 0,7h-20a3.5,3.5 0 0 1 0,-7z" />
+</vector>
