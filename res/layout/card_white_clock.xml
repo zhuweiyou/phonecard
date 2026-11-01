@@ -6,11 +6,13 @@
     android:gravity="center"
     android:background="@android:color/transparent">
 
-    <TextView
+    <!-- 日期也用 TextClock：跨天/改时间/换时区/换语言时由桌面进程自己刷新，App 端零刷新 -->
+    <TextClock
         android:id="@+id/date"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="11月1日  周日"
+        android:format12Hour="M月d日  E"
+        android:format24Hour="M月d日  E"
         android:textSize="17sp"
         android:textColor="#FFFFFF"
         android:fontFamily="sans-serif-medium"

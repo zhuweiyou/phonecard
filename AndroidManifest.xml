@@ -1,18 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     phonecard —— 手机桌面卡片（ColorOS/通用 Android 桌面小组件）
-    每张卡片 = 1 个 receiver（继承 card.BaseCard）+ 1 个 *Card.java + 1 个 layout + 1 个 info xml
-    新增卡片时照抄下面 <receiver> 块并改 3 个名字即可。
+    每张卡片 = 1 个 receiver（AppWidgetProvider）+ 1 个 *Card.java + 1 个 layout + 1 个 info xml
+    新增卡片时照抄下面 <receiver> 块并改 3 个名字即可（卡片为自包含实现，无基类）。
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.zhuweiyou.phonecard">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
 
-    <!-- 时钟卡片要"准点翻分钟"，Android 12+ 需要精确闹钟权限（用户可在系统设置里授予） -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- Android 13+：时钟类应用专用，安装即授予（无需用户手动开"闹钟和提醒"） -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- 无周期刷新：时间用 TextClock 自走，日期靠系统广播，不申请精确闹钟权限。 -->
 
     <!-- Android 11+ 包可见性：让卡片能解析到系统日历 / 时钟 -->
     <queries>
@@ -52,12 +49,8 @@
             android:label="@string/card_white_clock">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <!-- 每分钟自刷新用的私有 action，必须与本类 ACTION_TICK 一致 -->
-                <action android:name="com.zhuweiyou.phonecard.action.WHITE_CLOCK_TICK" />
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.intent.action.DATE_CHANGED" />
-                <action android:name="android.intent.action.LOCALE_CHANGED" />
+                <!-- 时间/日期都由 TextClock 自走，无需系统广播；仅升级后重刷一次让新布局生效 -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -71,8 +64,7 @@
             android:label="@string/card_demo">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.zhuweiyou.phonecard.action.DEMO_TICK" />
-                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/card_demo_info" />

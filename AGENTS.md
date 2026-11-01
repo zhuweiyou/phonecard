@@ -31,8 +31,7 @@ phonecard/
 └── src/com/zhuweiyou/phonecard/
     ├── MainActivity.java                  # 说明页：本包提供哪些卡片
     └── card/
-        ├── BaseCard.java                  # 卡片基类：分钟级刷新、多实例刷新
-        └── WhiteClockCard.java            # 卡片 01：手机桌面卡片-白色时钟
+        └── WhiteClockCard.java            # 卡片 01：手机桌面卡片-白色时钟（自包含，无基类）
 ```
 
 ## 构建（本地）
@@ -83,20 +82,23 @@ VERSION_NAME=1.0.0 VERSION_CODE=10000 OUTPUT_APK=phonecard-v1.0.0.apk ./build.sh
 
 ## 新增一张卡片（4 步）
 
-1. 新建 `card/XxxCard.java`，继承 `BaseCard`，实现 `tickAction()/layoutId()/bind()`；
+本项目每张卡片是**自包含**的 `AppWidgetProvider`，**没有共享基类**（只有一张卡，避免过度抽象；将来卡多了、确有重复逻辑再抽）。
+
+1. 新建 `card/XxxCard.java`，`extends AppWidgetProvider`：`onUpdate` 里 `updateAppWidget` 渲染；要响应系统变化就在 `onReceive` 里处理（照抄 `WhiteClockCard`）；
 2. 新建 `res/layout/card_xxx.xml`（只能用 RemoteViews 支持的控件：TextView/ImageView/LinearLayout/FrameLayout/Button 等）；
 3. 新建 `res/xml/card_xxx_info.xml`（尺寸/预览）；
-4. Manifest 里复制一个 `<receiver>`，改 `android:name`、`android:label`、tick action、`android:resource`。
+4. Manifest 里复制一个 `<receiver>`，改 `android:name`、`android:label`、intent-filter、`android:resource`。
 
 `strings.xml` 里加 `card_xxx` 作为显示名，命名建议统一成 `手机桌面卡片-XXX`，在选择列表里好认（第三方小组件一多，名字前缀很重要）。
 
-## 刷新机制（准点、不闪）
+## 刷新机制（App 端零刷新）
 
-- **时间**：布局里用 `TextClock`（`format12Hour=h:mm` / `format24Hour=HH:mm`），由桌面进程自己走时，
-  整分即跳，不依赖闹钟、不重绘 → 不闪、不慢；
-- **日期**：由广播维护，内容没变就跳过刷新；
-- 监听 `TIME_SET / TIMEZONE_CHANGED / DATE_CHANGED / LOCALE_CHANGED`；
-- 改了布局记得 `layoutVersion()` +1，升级后会自动整块重刷一次。
+- **时间**、**日期** 都是布局里的 `TextClock`：
+  - 时间：`format12Hour=h:mm` / `format24Hour=HH:mm`；
+  - 日期：`format12Hour/format24Hour = M月d日  E`。
+  由桌面进程自己走时，跨分/跨天/改时间/换时区/换语言都会自动更新 → 不需要我们刷新、不重绘、不闪；
+- **不申请任何权限、不发广播、不排闹钟**（`minSdk 29` 也不需要），最省电；
+- **唯一例外**：`MY_PACKAGE_REPLACED`（App 升级）时整块重刷一次，让新的布局/字号生效（否则旧 RemoteViews 缓存不更新）。
 
 ## 样式微调
 
@@ -167,29 +169,28 @@ VERSION_NAME=1.0.0 VERSION_CODE=10000 OUTPUT_APK=phonecard-v1.0.0.apk ./build.sh
 - `android:exported="true"`：Android 12+ 带 intent-filter 的 receiver 必须显式声明，否则不生效。
 - `previewLayout`（API 31+）优先于 `previewImage`，选卡片时显示的预览就是它。
 - `targetCellWidth/Height` 是给 Android 12+ 启动器看的"期望占几格"；`minWidth/minHeight` 用 `70×格数−30` 估算（5 格≈320dp）。
-- `updatePeriodMillis` 最小 30 分钟，做时钟没用 → 设 0，自己用 AlarmManager 每分钟刷。
+- `updatePeriodMillis` 最小 30 分钟，做秒级时钟没用 → 设 0；本项目连闹钟都不用，时间、日期都交给 `TextClock`。
 
 ### 三、一个 APK 注册多张卡片（本项目采用）
 
-机制：**一张卡片 = 一个 `<receiver>`**。同一个 APK 里放 N 个 receiver，就注册 N 张卡片，各自有独立类、独立布局、独立 provider XML、独立 `android:label`（就是选择列表里显示的名字）。
+机制：**一张卡片 = 一个 `<receiver>` + 一个 `AppWidgetProvider` 子类**。同一个 APK 里放 N 个 receiver，就注册 N 张卡片，各自有独立类、独立布局、独立 provider XML、独立 `android:label`（就是选择列表里显示的名字）。
 
-本项目为此抽象了 `BaseCard`：
+当前实现是**自包含单文件**（只有一张卡，不做基类抽象）：
 
 ```
 src/com/zhuweiyou/phonecard/card/
-├── BaseCard.java        # 公共：多实例刷新、每分钟 tick、时间/时区/语言变化刷新
-└── WhiteClockCard.java  # 卡片 01：手机桌面卡片-白色时钟
+└── WhiteClockCard.java   # 卡片 01：手机桌面卡片-白色时钟（extends AppWidgetProvider，无基类）
 ```
 
-`BaseCard` 负责：
-- `onUpdate / onEnabled / onDisabled` → 调度 `AlarmManager.setRepeating(60s)`；
-- `onReceive` 统一处理「私有 tick action」+ `TIME_SET/TIMEZONE_CHANGED/DATE_CHANGED/LOCALE_CHANGED`；
-- `getAppWidgetIds(self)` 遍历刷新，用户摆多份也都能刷到；
-- PendingIntent 的 requestCode 用类名 hash，多卡片互不覆盖。
+- `onUpdate` 渲染每张实例（`updateAppWidget`）；
+- `onReceive` 只处理 `MY_PACKAGE_REPLACED`（升级后整块重刷）；时间/日期由 `TextClock` 自走，无需广播；
+- `getAppWidgetIds(self)` 遍历本卡片全部实例，用户摆多份也都能刷到；
+- PendingIntent 的 requestCode 用 `widgetId*10+slot`，多实例/多卡片互不覆盖；
+- **不排闹钟**：时间、日期都由 `TextClock` 自走，App 端零刷新，见「刷新机制」。
 
 ### 四、刷新与限制（实测 + 文档结论）
 
-- 时钟类需要分钟级刷新 → `updatePeriodMillis=0` + `AlarmManager.setRepeating(ELAPSED_REALTIME, 60s)`；Doze 下会被合并/延后，亮屏时正常，够用。
+- 时钟类不建议靠 `AlarmManager` 周期刷（`setRepeating` 在 Doze 下被合并/延后，`setExact*` 又要精确闹钟权限）；本项目 `updatePeriodMillis=0`，时间**和日期**都用 `TextClock` 自走，App 端**零刷新、零闹钟、零权限**。
 - 精确闹钟（`setExact*`）在 Android 12+ 需要 `SCHEDULE_EXACT_ALARM` 权限，不建议为了一张卡片去申请。
 - RemoteViews 不支持自定义 View、不支持动画、不支持任意 Canvas；渐变/圆角用 shape drawable。
 - 点击交互：日期 → `MAIN + CATEGORY_APP_CALENDAR` 打开系统日历；时间 → 用 `queryIntentActivities`
@@ -220,17 +221,16 @@ src/com/zhuweiyou/phonecard/card/
 
 - `TextClock` 由桌面进程自己按系统时钟走时，**整分即跳、不需要任何闹钟、不需要任何权限**，也不存在 RemoteViews 重绘闪烁；
 - `TextClock` 在 RemoteViews 允许的控件列表里，实测 ColorOS 16 可正常 inflate；
-- 日期仍由我们的广播维护（只有跨天/换时区才需要），`bind()` 返回日期指纹，内容不变就跳过；
+- 日期同样用 `TextClock`（`format…="M月d日  E"`），跨天/换时区/改语言由桌面进程自己刷新，App 端无需广播；
 - 点击跳转：日期 → `MAIN + CATEGORY_APP_CALENDAR`；时间 → `queryIntentActivities` 找包名含
   `alarmclock/deskclock/.clock` 的时钟 App 直接启动（不硬编码厂商包名）。
   注意 Android 11+ 包可见性：未声明 `<queries>` 时 `resolveActivity` 会误判 null，本项目已声明。
-- **布局版本号**：`layoutVersion()` 变更后，App 升级后第一次刷新会自动整块重刷，避免桌面一直用旧布局
-  （否则换了布局但旧 RemoteViews 缓存不刷新，会出现"时间不动"）。
+- **升级后重刷**：App 升级时 `MY_PACKAGE_REPLACED` 会触发整块重刷，避免桌面一直用旧布局（旧 RemoteViews 缓存不刷新会出现"时间不动"）。
 
 ### 五、我们这张卡片的实现要点
 
 - 透明背景（`@android:color/transparent`），文字直接浮在壁纸上，与原卡片一致；
-- 日期 `M月d日  EEEE`（20sp）+ 时间 `HH:mm`/`h:mm`（76sp，跟随系统 12/24 小时制）；
+- 日期 `M月d日  E`（17sp）与时间 `HH:mm`/`h:mm`（80sp）**都用 `TextClock` 自走**，跟随系统 12/24 小时制，App 端零刷新；
 - 数字颜色统一 `#FFFFFF`，**没有**一加红 `#E62F2F`；
 - 不显示天气；
 - 轻微 `shadow` 保证浅色壁纸下的可读性；
